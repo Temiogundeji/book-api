@@ -1,41 +1,61 @@
 const express = require('express');
+const app = express();
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const {pool} = require('./config');
+const multer = require('multer');
+// const router = require('express').Router();
 
-const app = express();
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, 'uploads/');
+    },
+    filename: (req, file, cb) => {
+        cb(null, file.originalname);
+    }
+});
+
+const fileFilter = (req, file, cb) => {
+    if(file.mimetype === 'image/jpeg' || file.mimetype === 'image/png' || file.mimetype === 'jpg/png'){
+        cb(null, true);
+    }
+    cb(null, false);
+}
+
+const upload = multer({
+    storage: storage,
+    fileFilter: fileFilter,
+    limits: {
+    fileSize: 1024 * 1024 * 5
+}});
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({extended: true}));
+app.use(express.static('uploads'));
+
 app.use(cors());
 
-const getBooks = (req, res) => {
-    pool.query('SELECT * FROM books', (error, results) => {
+app.get('/books', (req, res) => {
+    pool.query('SELECT * FROM books returning *', (error, results) => {
         if(error){
             throw error;
         }
-        res.status(200).json(results.rows);
+        return res.status(200).json(results.rows);
     });
-}
+});
 
-const addBook = (req, res) => {
-    const {author, title} = req.body;
-    pool.query('INSERT INTO books (author, title) VALUES ($1, $2)', 
-    [author, title],
-    (error) => {
+
+app.post('/books', upload.single('bookImage'), (req, res) => {
+    const { author, title } = req.body;
+    const { path } = req.file;
+    console.log(req.file)
+    pool.query('INSERT INTO books (author, title, book_img) VALUES ($1, $2, $3)', [author, title, path], (error, results) => {
         if(error){
             throw error;
         }
         res.status(201).json({status: 'success', message: 'Book added.'});
-    }
-    );
-}
-
-app
-    .route('/books')
-    .get(getBooks)
-    .post(addBook)
-
+    });
+});
 
 app.listen(process.env.PORT || 3000, () => {
     console.log('Server listening');
